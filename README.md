@@ -5,6 +5,7 @@ Vulkan renderer.
 ## Getting Started
 
 ### Requirements
++ C++20 compiler
 + CMake 3.16+
 + Vulkan SDK 1.3+
 
@@ -14,4 +15,4 @@ Vulkan renderer.
 3. Run the generated Makefile.
 
 
-*NOTE: Linux only (for now)*
+*NOTE: Only tested on Linux using Clang 19.1.7*
