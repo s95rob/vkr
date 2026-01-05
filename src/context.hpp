@@ -68,6 +68,7 @@ namespace vkr {
         void SetVertexBuffers(std::span<BufferHandle> buffers);
 
         void SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle);
+        void SetPushConstants(void* pData, size_t size, size_t offset);
         void SetPrimitiveTopology(VkPrimitiveTopology topology);
         void SetCullMode(VkCullModeFlags cullMode);
         void Draw(uint32_t offset, uint32_t count);
@@ -92,6 +93,18 @@ namespace vkr {
         void TransitionImageLayout(VkCommandBuffer cmds, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
         
     private:
+        struct GraphicsPipelineAllocation {
+            VkPipeline pipeline;
+            VkPipelineLayout layout;
+            VkDescriptorSetLayout pushDescriptorSetLayout;
+        };
+
+        struct BufferAllocation {
+            VkBuffer buffer;
+            VmaAllocation alloc;
+            VmaAllocationInfo allocInfo;
+        };
+
         // Core
         inline static uint32_t s_contextCount = 0;
         inline static VkInstance s_vkInstance = nullptr;
@@ -120,21 +133,12 @@ namespace vkr {
         // Render commands
         VkCommandPool m_graphicsCommandPool = nullptr;
         VkCommandBuffer m_graphicsCommandBuffers[MAX_FRAMES_IN_FLIGHT] = {};
+        GraphicsPipelineAllocation* m_pBoundGraphicsPipeline = nullptr;
         
         // Resources
         VmaAllocator m_allocator = nullptr;
 
-        struct GraphicsPipelineAllocation {
-            VkPipeline pipeline;
-            VkPipelineLayout layout;
-            VkDescriptorSetLayout pushDescriptorSetLayout;
-        };
 
-        struct BufferAllocation {
-            VkBuffer buffer;
-            VmaAllocation alloc;
-            VmaAllocationInfo allocInfo;
-        };
         
         ResourceRegistry<GraphicsPipelineAllocation> m_graphicsPipelines;
         ResourceRegistry<BufferAllocation> m_buffers;

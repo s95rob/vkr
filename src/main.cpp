@@ -10,14 +10,16 @@
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <memory>
 
 static float vertices[] = {
-    0.0f, 0.0f, 0.0f,
-    1.0f, 0.0f, 0.0f,
-    1.0f, 1.0f, 0.0f
+    -1.0f, -1.0f, 0.0f,
+    1.0f, -1.0f, 0.0f,
+    0.0f, 1.0f, 0.0f
 };
-
 
 int main(int argc, char** argv) {
     // Setup window
@@ -68,8 +70,12 @@ int main(int argc, char** argv) {
 
     vkr::GraphicsPipelineHandle pipeline = context->CreateGraphicsPipeline(gpd);
 
+    float dt = 0.0f;
     while(!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+
+        // Update delta time
+        dt += 1.0f / 60.0f;
 
         context->BeginFrame();
         
@@ -85,6 +91,13 @@ int main(int argc, char** argv) {
         context->SetGraphicsPipeline(pipeline);
         context->SetPrimitiveTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
         context->SetCullMode(VK_CULL_MODE_NONE);
+
+        // Build and push MVP matrix
+        glm::mat4 mvp = glm::perspectiveLH(glm::radians(75.0f), 800.0f / 600.0f, 0.01f, 1000.0f) *
+            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 5.0f)) * 
+            glm::rotate(glm::mat4(1.0f), dt, glm::vec3(0.0f, 1.0f, 0.0f));
+
+        context->SetPushConstants(&mvp, sizeof(mvp), 0);
 
         std::vector<vkr::BufferHandle> vbos = { vbo };
         context->SetVertexBuffers(vbos);

@@ -293,7 +293,11 @@ namespace vkr {
             .extent = { width, height }
         };
         
-        vkCmdSetViewport(m_graphicsCommandBuffers[m_frameIndex], 0, 1, &viewport);
+        // Vulkan sizes the viewport -y up by default
+        VkViewport vp = viewport;
+        vp.y = vp.height;
+        vp.height *= -1.0f; 
+        vkCmdSetViewport(m_graphicsCommandBuffers[m_frameIndex], 0, 1, &vp);
         vkCmdSetScissor(m_graphicsCommandBuffers[m_frameIndex], 0, 1, &scissor);
     }
 
@@ -317,6 +321,12 @@ namespace vkr {
     void Context::SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle) {
         auto& pipeline = m_graphicsPipelines[pipelineHandle];
         vkCmdBindPipeline(m_graphicsCommandBuffers[m_frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
+        m_pBoundGraphicsPipeline = &pipeline;
+    }
+
+    void Context::SetPushConstants(void* pData, size_t size, size_t offset) {
+        vkCmdPushConstants(m_graphicsCommandBuffers[m_frameIndex], m_pBoundGraphicsPipeline->layout, 
+            VK_SHADER_STAGE_ALL_GRAPHICS, offset, size, pData);
     }
     
     void Context::SetPrimitiveTopology(VkPrimitiveTopology topology) {

@@ -2,6 +2,10 @@
 
 layout (location = 0) in vec3 aPos;
 
+layout (push_constant) uniform constants {
+    mat4 mvp;
+} PushConstants;
+
 void main() {
-    gl_Position = vec4(aPos, 1.0);
+    gl_Position = PushConstants.mvp * vec4(aPos, 1.0);
 }
