@@ -30,6 +30,7 @@ target_include_directories(vkr
 PRIVATE
     "src"
     ${Vulkan_INCLUDE_DIRS}
+    "extern/glm"
 )
 target_link_libraries(vkr
 PRIVATE
