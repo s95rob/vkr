@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     // Setup window
     glfwInit();
 
-    GLFWwindow* window = glfwCreateWindow(800, 600, "vk-pbr", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(800, 600, "vkr", nullptr, nullptr);
 
     vkr::PresentationParameters params = {};
     #if defined(VKR_LINUX)
