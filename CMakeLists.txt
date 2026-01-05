@@ -26,6 +26,11 @@ add_subdirectory("extern/glfw")
 
 file(GLOB_RECURSE VKR_SRCS "src/*.cpp")
 add_executable(vkr ${VKR_SRCS})
+target_include_directories(vkr
+PRIVATE
+    "src"
+    ${Vulkan_INCLUDE_DIRS}
+)
 target_link_libraries(vkr
 PRIVATE
     Vulkan::Vulkan

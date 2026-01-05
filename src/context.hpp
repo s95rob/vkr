@@ -8,27 +8,43 @@
     #define VK_USE_PLATFORM_XLIB_KHR
 #endif
 #include <vulkan/vulkan.h>
+#include <vma/vk_mem_alloc.h>
 
 #include <vector>
 #include <span>
 
 namespace vkr {
 
+    constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
+
+    struct BufferDesc {
+        void* pData;
+        size_t size;
+        VkBufferUsageFlags usage;
+    };
+
+    using BufferHandle = ResourceID;
+
     struct ShaderDesc {
         void* pData;
         size_t size;
     };
 
+    struct VertexAttrib {
+        uint32_t binding;
+        uint32_t offset;
+        uint32_t stride;
+        VkFormat format;
+    };
+
     struct GraphicsPipelineDesc {
+        std::vector<VertexAttrib> vertexAttribs;
         VkShaderModule vertexShader;
         VkShaderModule fragmentShader;
     };
 
     using GraphicsPipelineHandle = ResourceID;
 
-    
-    constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
-    
     struct PresentationParameters {
         #if defined(VK_USE_PLATFORM_WIN32_KHR)
         HWND hWnd;
@@ -39,7 +55,7 @@ namespace vkr {
     };
     
     class Context {
-        public:
+    public:
         Context(const PresentationParameters& params);
         ~Context();
         
@@ -49,18 +65,18 @@ namespace vkr {
         void BeginRendering(const VkViewport& viewport);
         void EndRendering();
 
+        void SetVertexBuffers(std::span<BufferHandle> buffers);
+
         void SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle);
         void SetPrimitiveTopology(VkPrimitiveTopology topology);
         void SetCullMode(VkCullModeFlags cullMode);
         void Draw(uint32_t offset, uint32_t count);
         
-        // TODO: testing only
-        void Do(GraphicsPipelineHandle pipelineHandle);
-        
+        BufferHandle CreateBuffer(const BufferDesc& desc);
         VkShaderModule CreateShader(const ShaderDesc& desc);
         GraphicsPipelineHandle CreateGraphicsPipeline(const GraphicsPipelineDesc& desc);
         
-        private:
+    private:
         // Find a suitable queue family index based on flags
         uint32_t FindQueueFamilyIndex(VkPhysicalDevice pd, VkQueueFlags flags);
         
@@ -75,7 +91,7 @@ namespace vkr {
         
         void TransitionImageLayout(VkCommandBuffer cmds, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
         
-        private:
+    private:
         // Core
         inline static uint32_t s_contextCount = 0;
         inline static VkInstance s_vkInstance = nullptr;
@@ -106,13 +122,22 @@ namespace vkr {
         VkCommandBuffer m_graphicsCommandBuffers[MAX_FRAMES_IN_FLIGHT] = {};
         
         // Resources
+        VmaAllocator m_allocator = nullptr;
+
         struct GraphicsPipelineAllocation {
             VkPipeline pipeline;
             VkPipelineLayout layout;
             VkDescriptorSetLayout pushDescriptorSetLayout;
         };
+
+        struct BufferAllocation {
+            VkBuffer buffer;
+            VmaAllocation alloc;
+            VmaAllocationInfo allocInfo;
+        };
         
         ResourceRegistry<GraphicsPipelineAllocation> m_graphicsPipelines;
+        ResourceRegistry<BufferAllocation> m_buffers;
     };
 
 }

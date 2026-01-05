@@ -1,3 +1,4 @@
+#define VMA_IMPLEMENTATION
 #include "context.hpp"
 
 #include <cassert>
@@ -106,7 +107,7 @@ namespace vkr {
             .runtimeDescriptorArray = true
         };
 
-        // Initialize the device 
+        // Initialize the device and create allocator
         VkDeviceCreateInfo dci = {
             .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
             .pNext = &pddif,
@@ -117,6 +118,15 @@ namespace vkr {
         };
 
         VK_ASSERT(vkCreateDevice(m_physicalDevice, &dci, nullptr, &m_device));
+
+        VmaAllocatorCreateInfo aci = {
+            .vulkanApiVersion = VK_API_VERSION_1_3,
+            .instance = s_vkInstance,
+            .physicalDevice = m_physicalDevice,
+            .device = m_device
+        };
+
+        VK_ASSERT(vmaCreateAllocator(&aci, &m_allocator));
 
         // Grab handles to the queues
         vkGetDeviceQueue(m_device, gdqci.queueFamilyIndex, 0, &m_graphicsQueue);
@@ -207,9 +217,6 @@ namespace vkr {
         // Ready the swapchain image for rendering
         TransitionImageLayout(m_graphicsCommandBuffers[m_frameIndex], m_swapchainImages[m_swapchainImageIndex],
         m_swapchainFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-
-        // TODO: temp
-        // Begin rendering to swapchain image
     }
 
     void Context::EndFrame() {
@@ -293,6 +300,19 @@ namespace vkr {
     void Context::EndRendering() {
         vkCmdEndRendering(m_graphicsCommandBuffers[m_frameIndex]);
     }
+
+    void Context::SetVertexBuffers(std::span<BufferHandle> bufferHandles) {
+        std::vector<VkBuffer> buffers;
+        for (auto handle : bufferHandles) {
+            buffers.push_back(m_buffers[handle].buffer);
+        }
+
+        // TODO: support offsets?
+        VkDeviceSize offsets[16] = {};
+
+        vkCmdBindVertexBuffers(m_graphicsCommandBuffers[m_frameIndex], 0,
+            buffers.size(), buffers.data(), offsets);
+    }
     
     void Context::SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle) {
         auto& pipeline = m_graphicsPipelines[pipelineHandle];
@@ -311,7 +331,53 @@ namespace vkr {
         vkCmdDraw(m_graphicsCommandBuffers[m_frameIndex], count, 1, offset, 0);
     }
     
+    BufferHandle Context::CreateBuffer(const BufferDesc& desc) {
+        BufferHandle handle = m_buffers.Create();
+        BufferAllocation& buffer = m_buffers[handle];
 
+        // Create the device-local buffer
+        VkBufferCreateInfo bci = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = desc.size,
+            .usage = desc.usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+        };
+
+        VmaAllocationCreateInfo aci = {
+            .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
+        };
+
+        VK_ASSERT(vmaCreateBuffer(m_allocator, &bci, &aci, &buffer.buffer, &buffer.alloc, &buffer.allocInfo));
+
+        // Copy data from host to the buffer on device
+        BufferAllocation stagingBuffer;
+
+        bci.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+        aci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+        aci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        VK_ASSERT(vmaCreateBuffer(m_allocator, &bci, &aci, 
+            &stagingBuffer.buffer, &stagingBuffer.alloc, 
+            &stagingBuffer.allocInfo));
+
+        memcpy(stagingBuffer.allocInfo.pMappedData, desc.pData, desc.size);
+
+        VkCommandBuffer cmds = BeginImmediateCommands();
+
+        VkBufferCopy bc = {
+            .size = desc.size,
+        };
+
+        vkCmdCopyBuffer(cmds, stagingBuffer.buffer, buffer.buffer, 1, &bc);
+
+        EndImmediateCommands(cmds);
+
+        vmaDestroyBuffer(m_allocator, stagingBuffer.buffer, stagingBuffer.alloc);
+
+        return handle;
+    }
 
     VkShaderModule Context::CreateShader(const ShaderDesc& desc) {
         VkShaderModule shader = nullptr;
@@ -391,25 +457,34 @@ namespace vkr {
 
         // Setup vertex input layout
         // TODO: for testing only- change with input layout descriptor
-        VkVertexInputBindingDescription vibd = {
-            .binding = 0,
-            .stride = sizeof(float) * 3,
-            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
-        };
+        std::vector<VkVertexInputBindingDescription> vibds;
+        std::vector<VkVertexInputAttributeDescription> viads;
 
-        VkVertexInputAttributeDescription viad = {
-            .binding = 0,
-            .location = 0,
-            .format = VK_FORMAT_R32G32B32_SFLOAT,
-            .offset = 0
+        uint32_t vertexLocation = 0;
+        for (auto& attrib : desc.vertexAttribs) {
+            VkVertexInputBindingDescription vibd = {
+                .binding = attrib.binding,
+                .stride = attrib.stride,
+                .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+            };
+
+            VkVertexInputAttributeDescription viad = {
+                .binding = attrib.binding,
+                .location = vertexLocation++,
+                .format = attrib.format,
+                .offset = attrib.offset
+            };
+
+            vibds.push_back(vibd);
+            viads.push_back(viad);
         };
 
         VkPipelineVertexInputStateCreateInfo pvisci = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-            .vertexBindingDescriptionCount = 1,
-            .pVertexBindingDescriptions = &vibd,
-            .vertexAttributeDescriptionCount = 1,
-            .pVertexAttributeDescriptions = &viad
+            .vertexBindingDescriptionCount = static_cast<uint32_t>(vibds.size()),
+            .pVertexBindingDescriptions = vibds.data(),
+            .vertexAttributeDescriptionCount = static_cast<uint32_t>(viads.size()),
+            .pVertexAttributeDescriptions = viads.data()
         };
 
         // Setup (dynamic) input assembly

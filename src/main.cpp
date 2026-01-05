@@ -12,6 +12,12 @@
 
 #include <memory>
 
+static float vertices[] = {
+    0.0f, 0.0f, 0.0f,
+    1.0f, 0.0f, 0.0f,
+    1.0f, 1.0f, 0.0f
+};
+
 
 int main(int argc, char** argv) {
     // Setup window
@@ -30,6 +36,14 @@ int main(int argc, char** argv) {
 
     FileReader vsFile("test.vs.spv");
     FileReader fsFile("test.fs.spv");
+
+    vkr::BufferDesc bd = {
+        .pData = vertices,
+        .size = sizeof(vertices),
+        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+    };
+
+    vkr::BufferHandle vbo = context->CreateBuffer(bd);
     
     vkr::ShaderDesc sd;
     sd.pData = vsFile.Data();
@@ -41,6 +55,14 @@ int main(int argc, char** argv) {
     VkShaderModule fs = context->CreateShader(sd);
 
     vkr::GraphicsPipelineDesc gpd = {};
+    vkr::VertexAttrib attrib = {
+        .binding = 0,
+        .format = VK_FORMAT_R32G32B32_SFLOAT,
+        .offset = 0,
+        .stride = sizeof(float) * 3
+    };
+    gpd.vertexAttribs.push_back(attrib);
+
     gpd.vertexShader = vs;
     gpd.fragmentShader = fs;
 
@@ -64,6 +86,8 @@ int main(int argc, char** argv) {
         context->SetPrimitiveTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
         context->SetCullMode(VK_CULL_MODE_NONE);
 
+        std::vector<vkr::BufferHandle> vbos = { vbo };
+        context->SetVertexBuffers(vbos);
         context->Draw(0, 3);
 
         context->EndRendering();
