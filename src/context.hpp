@@ -1,5 +1,7 @@
 #pragma once
 
+#include "resource.hpp"
+
 #if defined(VKR_WIN32)
     #define VK_USE_PLATFORM_WIN32_KHR
 #elif defined(VKR_LINUX)
@@ -22,53 +24,58 @@ namespace vkr {
         VkShaderModule fragmentShader;
     };
 
-    struct GraphicsPipeline {
-        VkPipeline pipeline;
-        VkPipelineLayout layout;
-        VkDescriptorSetLayout pushDescriptorSetLayout;
-    };
+    using GraphicsPipelineHandle = ResourceID;
 
+    
     constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
-
+    
     struct PresentationParameters {
         #if defined(VK_USE_PLATFORM_WIN32_KHR)
-            HWND hWnd;
+        HWND hWnd;
         #elif defined(VK_USE_PLATFORM_XLIB_KHR)
-            _XDisplay* dpy;
-            XID window;
+        _XDisplay* dpy;
+        XID window;
         #endif
     };
-
+    
     class Context {
-    public:
+        public:
         Context(const PresentationParameters& params);
         ~Context();
-
+        
         void BeginFrame();
         void EndFrame();
 
-        // TODO: testing only
-        void Do(const GraphicsPipeline& pipeline);
+        void BeginRendering(const VkViewport& viewport);
+        void EndRendering();
 
-        VkShaderModule CreateShader(const ShaderDesc& desc);
-        GraphicsPipeline CreateGraphicsPipeline(const GraphicsPipelineDesc& desc);
+        void SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle);
+        void SetPrimitiveTopology(VkPrimitiveTopology topology);
+        void SetCullMode(VkCullModeFlags cullMode);
+        void Draw(uint32_t offset, uint32_t count);
         
-    private:
+        // TODO: testing only
+        void Do(GraphicsPipelineHandle pipelineHandle);
+        
+        VkShaderModule CreateShader(const ShaderDesc& desc);
+        GraphicsPipelineHandle CreateGraphicsPipeline(const GraphicsPipelineDesc& desc);
+        
+        private:
         // Find a suitable queue family index based on flags
         uint32_t FindQueueFamilyIndex(VkPhysicalDevice pd, VkQueueFlags flags);
-
+        
         // (Re)create the swapchain
         void ValidateSwapchain();
-
+        
         // Return a transient command buffer used for immediate execution
         VkCommandBuffer BeginImmediateCommands();
-
+        
         // End commands and submit them for immediate execution
         void EndImmediateCommands(VkCommandBuffer cmds);
-
+        
         void TransitionImageLayout(VkCommandBuffer cmds, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
-
-    private:
+        
+        private:
         // Core
         inline static uint32_t s_contextCount = 0;
         inline static VkInstance s_vkInstance = nullptr;
@@ -78,7 +85,7 @@ namespace vkr {
         VkQueue m_transferQueue = nullptr;
         VkFence m_frameInFlightFences[MAX_FRAMES_IN_FLIGHT] = {};
         uint32_t m_frameIndex = 0;
-
+        
         // Presentation
         PresentationParameters m_presentParams;
         VkSurfaceKHR m_surface = nullptr;
@@ -90,13 +97,22 @@ namespace vkr {
         uint32_t m_swapchainImageIndex = 0;
         VkFormat m_swapchainFormat = VK_FORMAT_UNDEFINED;
         std::vector<VkSemaphore> m_presentReadySignals;
-
+        
         // Ext
         VkCommandPool m_transientCommandPool = nullptr;
-
+        
         // Render commands
         VkCommandPool m_graphicsCommandPool = nullptr;
         VkCommandBuffer m_graphicsCommandBuffers[MAX_FRAMES_IN_FLIGHT] = {};
+        
+        // Resources
+        struct GraphicsPipelineAllocation {
+            VkPipeline pipeline;
+            VkPipelineLayout layout;
+            VkDescriptorSetLayout pushDescriptorSetLayout;
+        };
+        
+        ResourceRegistry<GraphicsPipelineAllocation> m_graphicsPipelines;
     };
 
 }

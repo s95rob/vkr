@@ -44,13 +44,29 @@ int main(int argc, char** argv) {
     gpd.vertexShader = vs;
     gpd.fragmentShader = fs;
 
-    vkr::GraphicsPipeline pipeline = context->CreateGraphicsPipeline(gpd);
+    vkr::GraphicsPipelineHandle pipeline = context->CreateGraphicsPipeline(gpd);
 
     while(!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
         context->BeginFrame();
-        context->Do(pipeline);
+        
+        VkViewport viewport = {
+            .width = 800,
+            .height = 600,
+            .minDepth = 0.0f,
+            .maxDepth = 1.0f
+        };
+
+        context->BeginRendering(viewport);
+
+        context->SetGraphicsPipeline(pipeline);
+        context->SetPrimitiveTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+        context->SetCullMode(VK_CULL_MODE_NONE);
+
+        context->Draw(0, 3);
+
+        context->EndRendering();
         context->EndFrame();
     }
 

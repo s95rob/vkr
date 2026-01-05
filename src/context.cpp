@@ -207,6 +207,9 @@ namespace vkr {
         // Ready the swapchain image for rendering
         TransitionImageLayout(m_graphicsCommandBuffers[m_frameIndex], m_swapchainImages[m_swapchainImageIndex],
         m_swapchainFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+        // TODO: temp
+        // Begin rendering to swapchain image
     }
 
     void Context::EndFrame() {
@@ -250,53 +253,65 @@ namespace vkr {
         m_frameIndex = (m_frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
-    void Context::Do(const GraphicsPipeline& pipeline) {
-        VkClearValue clear;
-        clear.color = { 1.0f, 0.0f, 0.0f, 1.0f };
-        
+    void Context::BeginRendering(const VkViewport& viewport) {
         VkRenderingAttachmentInfo rai = {
             .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
             .imageView = m_swapchainImageViews[m_swapchainImageIndex],
             .imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-            .clearValue = clear
+            .clearValue.color = { 0.0f, 0.0f, 0.0f, 1.0f }
         };
+
+        int x = static_cast<int>(viewport.x);
+        int y = static_cast<int>(viewport.y);
+        uint32_t width = static_cast<uint32_t>(viewport.width);
+        uint32_t height = static_cast<uint32_t>(viewport.height);
 
         VkRenderingInfo ri = {
             .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
             .layerCount = 1,
             .renderArea = {
-                .extent = { 800, 600 }
+                .offset = { x, y },
+                .extent = { width, height }
             },
             .colorAttachmentCount = 1,
             .pColorAttachments = &rai
         };
 
         vkCmdBeginRendering(m_graphicsCommandBuffers[m_frameIndex], &ri);
-
-        VkViewport vp = {
-            .x = 0,
-            .y = 0,
-            .width = 800,
-            .height = 600,
-            .minDepth = 0.0f,
-            .maxDepth = 1.0f
+        
+        VkRect2D scissor = {
+            .offset = { x, y },
+            .extent = { width, height }
         };
+        
+        vkCmdSetViewport(m_graphicsCommandBuffers[m_frameIndex], 0, 1, &viewport);
+        vkCmdSetScissor(m_graphicsCommandBuffers[m_frameIndex], 0, 1, &scissor);
+    }
 
-        VkRect2D s = {
-            .extent = { 800, 600 }
-        };
-
-        vkCmdBindPipeline(m_graphicsCommandBuffers[m_frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
-        vkCmdSetPrimitiveTopology(m_graphicsCommandBuffers[m_frameIndex], VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-        vkCmdSetCullMode(m_graphicsCommandBuffers[m_frameIndex], VK_CULL_MODE_NONE);
-        vkCmdSetViewport(m_graphicsCommandBuffers[m_frameIndex], 0, 1, &vp);
-        vkCmdSetScissor(m_graphicsCommandBuffers[m_frameIndex], 0, 1, &s);
-        vkCmdDraw(m_graphicsCommandBuffers[m_frameIndex], 3, 1, 0, 0);
-
+    void Context::EndRendering() {
         vkCmdEndRendering(m_graphicsCommandBuffers[m_frameIndex]);
     }
+    
+    void Context::SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle) {
+        auto& pipeline = m_graphicsPipelines[pipelineHandle];
+        vkCmdBindPipeline(m_graphicsCommandBuffers[m_frameIndex], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline);
+    }
+    
+    void Context::SetPrimitiveTopology(VkPrimitiveTopology topology) {
+        vkCmdSetPrimitiveTopology(m_graphicsCommandBuffers[m_frameIndex], topology);
+    }
+    
+    void Context::SetCullMode(VkCullModeFlags cullMode) {
+        vkCmdSetCullMode(m_graphicsCommandBuffers[m_frameIndex], cullMode);
+    }
+    
+    void Context::Draw(uint32_t offset, uint32_t count) {
+        vkCmdDraw(m_graphicsCommandBuffers[m_frameIndex], count, 1, offset, 0);
+    }
+    
+
 
     VkShaderModule Context::CreateShader(const ShaderDesc& desc) {
         VkShaderModule shader = nullptr;
@@ -312,8 +327,9 @@ namespace vkr {
         return shader;
     }
 
-    GraphicsPipeline Context::CreateGraphicsPipeline(const GraphicsPipelineDesc& desc) {
-        GraphicsPipeline pipeline = {};
+    GraphicsPipelineHandle Context::CreateGraphicsPipeline(const GraphicsPipelineDesc& desc) {
+        GraphicsPipelineHandle handle = m_graphicsPipelines.Create();
+        GraphicsPipelineAllocation& pipeline = m_graphicsPipelines[handle];
 
         // Setup pipeline layout
         VkDescriptorSetLayoutBinding uniformBinding = {
@@ -502,7 +518,7 @@ namespace vkr {
         // TODO: use pipeline cache?
         VK_ASSERT(vkCreateGraphicsPipelines(m_device, nullptr, 1, &gpci, nullptr, &pipeline.pipeline));
 
-        return pipeline;
+        return handle;
     }
 
     uint32_t Context::FindQueueFamilyIndex(VkPhysicalDevice pd, VkQueueFlags flags) {
