@@ -13,16 +13,18 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <tiny_gltf.h>
+
 #include <memory>
 
-static float vertices[] = {
-    -1.0f, -1.0f, 0.0f,
-    1.0f, -1.0f, 0.0f,
-    0.0f, 1.0f, 0.0f
+struct MeshPart {
+    vkr::BufferHandle vbo, ibo;
+    uint32_t indexOffset, indexCount;
+    VkIndexType indexType;
 };
 
-static uint32_t indices[] = {
-    0, 1, 2
+struct Mesh {
+    std::vector<MeshPart> parts;
 };
 
 int main(int argc, char** argv) {
@@ -30,6 +32,13 @@ int main(int argc, char** argv) {
     glfwInit();
 
     GLFWwindow* window = glfwCreateWindow(800, 600, "vkr", nullptr, nullptr);
+
+    // Load GLTF
+    tinygltf::TinyGLTF gltfLoader;
+    tinygltf::Model gltfModel;
+
+    bool gltfLoadResult = gltfLoader.LoadBinaryFromFile(&gltfModel, nullptr, nullptr, "../res/Box.glb");
+    assert(gltfLoadResult != false);
 
     vkr::PresentationParameters params = {};
     #if defined(VKR_LINUX)
@@ -42,20 +51,6 @@ int main(int argc, char** argv) {
 
     FileReader vsFile("test.vs.spv");
     FileReader fsFile("test.fs.spv");
-
-    vkr::BufferDesc bd = {
-        .pData = vertices,
-        .size = sizeof(vertices),
-        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-    };
-
-    vkr::BufferHandle vbo = context->CreateBuffer(bd);
-
-    bd.pData = indices;
-    bd.size = sizeof(indices);
-    bd.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-
-    vkr::BufferHandle ibo = context->CreateBuffer(bd);
     
     vkr::ShaderDesc sd;
     sd.pData = vsFile.Data();
@@ -79,6 +74,51 @@ int main(int argc, char** argv) {
     gpd.fragmentShader = fs;
 
     vkr::GraphicsPipelineHandle pipeline = context->CreateGraphicsPipeline(gpd);
+
+    // Build GLTF scene buffers
+    std::vector<Mesh> sceneMeshes;
+
+    for (auto& gltfMesh : gltfModel.meshes) {
+        Mesh mesh = {};
+
+        for (auto& primitive : gltfMesh.primitives) {
+            MeshPart meshPart = {};
+
+            auto& vertexPositionsAccessor = gltfModel.accessors[primitive.attributes["POSITION"]];
+            auto& vertexIndicesAccessor = gltfModel.accessors[primitive.indices];
+
+            auto& vertexPositionsView = gltfModel.bufferViews[vertexPositionsAccessor.bufferView];
+            auto& vertexIndicesView = gltfModel.bufferViews[vertexIndicesAccessor.bufferView];
+
+            auto& vertexPositionsBuffer = gltfModel.buffers[vertexPositionsView.buffer];
+            auto& vertexIndicesBuffer = gltfModel.buffers[vertexIndicesView.buffer];
+
+            meshPart.indexCount = vertexIndicesAccessor.count;
+
+            // Build vertex buffer
+            vkr::BufferDesc bd = {};
+            bd.pData = reinterpret_cast<void*>(vertexPositionsBuffer.data.data() + vertexPositionsView.byteOffset + vertexPositionsAccessor.byteOffset);
+            bd.size = vertexPositionsView.byteLength;
+            bd.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+            meshPart.vbo = context->CreateBuffer(bd);
+
+            // Build index buffer
+            bd.pData = reinterpret_cast<void*>(vertexIndicesBuffer.data.data() + vertexIndicesView.byteOffset + vertexIndicesAccessor.byteOffset);
+            bd.size = vertexIndicesView.byteLength;
+            bd.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+            meshPart.ibo = context->CreateBuffer(bd);
+
+            // Resolve index type
+            switch (vertexIndicesAccessor.componentType) {
+            case GL_UNSIGNED_SHORT: meshPart.indexType = VK_INDEX_TYPE_UINT16; break;
+            case GL_UNSIGNED_INT: meshPart.indexType = VK_INDEX_TYPE_UINT32; break;
+            }
+
+            mesh.parts.push_back(meshPart);
+        }
+
+        sceneMeshes.push_back(mesh);
+    }
 
     float dt = 0.0f;
     while(!glfwWindowShouldClose(window)) {
@@ -104,15 +144,20 @@ int main(int argc, char** argv) {
 
         // Build and push MVP matrix
         glm::mat4 mvp = glm::perspectiveLH(glm::radians(75.0f), 800.0f / 600.0f, 0.01f, 1000.0f) *
-            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 5.0f)) * 
+            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 2.5f)) * 
             glm::rotate(glm::mat4(1.0f), dt, glm::vec3(0.0f, 1.0f, 0.0f));
 
         context->SetPushConstants(&mvp, sizeof(mvp), 0);
 
-        std::vector<vkr::BufferHandle> vbos = { vbo };
-        context->SetVertexBuffers(vbos);
-        context->SetIndexBuffer(ibo, VK_INDEX_TYPE_UINT32);
-        context->DrawIndexed(0, 3);
+        // Draw GLTF scene
+        for (auto& mesh : sceneMeshes) {
+            for (auto& meshPart : mesh.parts) {
+                vkr::BufferHandle vbos[] = { meshPart.vbo };
+                context->SetVertexBuffers(vbos);
+                context->SetIndexBuffer(meshPart.ibo, meshPart.indexType);
+                context->DrawIndexed(meshPart.indexOffset, meshPart.indexCount);
+            }
+        }
 
         context->EndRendering();
         context->EndFrame();
