@@ -21,6 +21,10 @@ static float vertices[] = {
     0.0f, 1.0f, 0.0f
 };
 
+static uint32_t indices[] = {
+    0, 1, 2
+};
+
 int main(int argc, char** argv) {
     // Setup window
     glfwInit();
@@ -46,6 +50,12 @@ int main(int argc, char** argv) {
     };
 
     vkr::BufferHandle vbo = context->CreateBuffer(bd);
+
+    bd.pData = indices;
+    bd.size = sizeof(indices);
+    bd.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+
+    vkr::BufferHandle ibo = context->CreateBuffer(bd);
     
     vkr::ShaderDesc sd;
     sd.pData = vsFile.Data();
@@ -101,7 +111,8 @@ int main(int argc, char** argv) {
 
         std::vector<vkr::BufferHandle> vbos = { vbo };
         context->SetVertexBuffers(vbos);
-        context->Draw(0, 3);
+        context->SetIndexBuffer(ibo, VK_INDEX_TYPE_UINT32);
+        context->DrawIndexed(0, 3);
 
         context->EndRendering();
         context->EndFrame();

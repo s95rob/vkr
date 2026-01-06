@@ -66,13 +66,16 @@ namespace vkr {
         void EndRendering();
 
         void SetVertexBuffers(std::span<BufferHandle> buffers);
+        void SetIndexBuffer(BufferHandle bufferHandle, VkIndexType indexType);
 
         void SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle);
         void SetPushConstants(void* pData, size_t size, size_t offset);
         void SetPrimitiveTopology(VkPrimitiveTopology topology);
         void SetCullMode(VkCullModeFlags cullMode);
+
         void Draw(uint32_t offset, uint32_t count);
-        
+        void DrawIndexed(uint32_t offset, uint32_t count);
+
         BufferHandle CreateBuffer(const BufferDesc& desc);
         VkShaderModule CreateShader(const ShaderDesc& desc);
         GraphicsPipelineHandle CreateGraphicsPipeline(const GraphicsPipelineDesc& desc);

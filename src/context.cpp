@@ -317,6 +317,11 @@ namespace vkr {
         vkCmdBindVertexBuffers(m_graphicsCommandBuffers[m_frameIndex], 0,
             buffers.size(), buffers.data(), offsets);
     }
+
+    void Context::SetIndexBuffer(BufferHandle bufferHandle, VkIndexType indexType) {
+        BufferAllocation& buffer = m_buffers[bufferHandle];
+        vkCmdBindIndexBuffer(m_graphicsCommandBuffers[m_frameIndex], buffer.buffer, 0, indexType);
+    }
     
     void Context::SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle) {
         auto& pipeline = m_graphicsPipelines[pipelineHandle];
@@ -339,6 +344,10 @@ namespace vkr {
     
     void Context::Draw(uint32_t offset, uint32_t count) {
         vkCmdDraw(m_graphicsCommandBuffers[m_frameIndex], count, 1, offset, 0);
+    }
+
+    void Context::DrawIndexed(uint32_t offset, uint32_t count) {
+        vkCmdDrawIndexed(m_graphicsCommandBuffers[m_frameIndex], count, 1, offset, 0, 0);
     }
     
     BufferHandle Context::CreateBuffer(const BufferDesc& desc) {
