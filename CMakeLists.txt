@@ -21,6 +21,7 @@ if (${LINUX})
 endif()
 
 add_subdirectory("extern/glfw")
+add_subdirectory("extern/tinygltf")
 
 # vkr
 
@@ -37,6 +38,7 @@ PRIVATE
     Vulkan::Vulkan
     Vulkan::Headers
     glfw
+    tinygltf
 )
 target_compile_definitions(vkr
 PRIVATE
