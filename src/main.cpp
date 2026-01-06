@@ -19,12 +19,17 @@
 
 struct MeshPart {
     vkr::BufferHandle vbo, ibo;
+    vkr::BufferHandle mbo; // TODO: material buffer- testing only
     uint32_t indexOffset, indexCount;
     VkIndexType indexType;
 };
 
 struct Mesh {
     std::vector<MeshPart> parts;
+};
+
+struct Material {
+    glm::vec4 baseColor;
 };
 
 int main(int argc, char** argv) {
@@ -93,20 +98,34 @@ int main(int argc, char** argv) {
             auto& vertexPositionsBuffer = gltfModel.buffers[vertexPositionsView.buffer];
             auto& vertexIndicesBuffer = gltfModel.buffers[vertexIndicesView.buffer];
 
+            
             meshPart.indexCount = vertexIndicesAccessor.count;
-
+            
             // Build vertex buffer
             vkr::BufferDesc bd = {};
             bd.pData = reinterpret_cast<void*>(vertexPositionsBuffer.data.data() + vertexPositionsView.byteOffset + vertexPositionsAccessor.byteOffset);
             bd.size = vertexPositionsView.byteLength;
             bd.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
             meshPart.vbo = context->CreateBuffer(bd);
-
+            
             // Build index buffer
             bd.pData = reinterpret_cast<void*>(vertexIndicesBuffer.data.data() + vertexIndicesView.byteOffset + vertexIndicesAccessor.byteOffset);
             bd.size = vertexIndicesView.byteLength;
             bd.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
             meshPart.ibo = context->CreateBuffer(bd);
+            
+            // Build material buffer
+            auto& material = gltfModel.materials[primitive.material];
+
+            auto& baseColorFactor = material.pbrMetallicRoughness.baseColorFactor;
+            Material materialData = {
+                .baseColor = { baseColorFactor[0], baseColorFactor[1], baseColorFactor[2], baseColorFactor[3] }
+            };
+
+            bd.pData = &materialData;
+            bd.size = sizeof(materialData);
+            bd.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+            meshPart.mbo = context->CreateBuffer(bd);
 
             // Resolve index type
             switch (vertexIndicesAccessor.componentType) {
@@ -155,6 +174,7 @@ int main(int argc, char** argv) {
                 vkr::BufferHandle vbos[] = { meshPart.vbo };
                 context->SetVertexBuffers(vbos);
                 context->SetIndexBuffer(meshPart.ibo, meshPart.indexType);
+                context->SetUniformBuffer(meshPart.mbo, 0);
                 context->DrawIndexed(meshPart.indexOffset, meshPart.indexCount);
             }
         }

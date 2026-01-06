@@ -1,3 +1,4 @@
+#define VOLK_IMPLEMENTATION
 #define VMA_IMPLEMENTATION
 #include "context.hpp"
 
@@ -13,6 +14,8 @@ namespace vkr {
         : m_presentParams(params) {
         // Create single VkInstance
         if (s_vkInstance == nullptr) {
+            VK_ASSERT(volkInitialize());
+
             VkApplicationInfo ai = {
                 .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
                 .apiVersion = VK_API_VERSION_1_3
@@ -45,6 +48,7 @@ namespace vkr {
             };
 
             VK_ASSERT(vkCreateInstance(&ici, nullptr, &s_vkInstance));
+            volkLoadInstance(s_vkInstance);
         }
 
         // Select a physical device
@@ -118,14 +122,21 @@ namespace vkr {
         };
 
         VK_ASSERT(vkCreateDevice(m_physicalDevice, &dci, nullptr, &m_device));
+        volkLoadDevice(m_device);
 
+        VmaVulkanFunctions vmaVkFns = {
+            .vkGetInstanceProcAddr = vkGetInstanceProcAddr,
+            .vkGetDeviceProcAddr = vkGetDeviceProcAddr
+        };
+        
         VmaAllocatorCreateInfo aci = {
             .vulkanApiVersion = VK_API_VERSION_1_3,
             .instance = s_vkInstance,
             .physicalDevice = m_physicalDevice,
-            .device = m_device
+            .device = m_device,
+            .pVulkanFunctions = &vmaVkFns
         };
-
+        
         VK_ASSERT(vmaCreateAllocator(&aci, &m_allocator));
 
         // Grab handles to the queues
@@ -195,6 +206,7 @@ namespace vkr {
         // Final context destroyed, kill the instance
         if (s_vkInstance != nullptr && --s_contextCount == 0) {
             vkDestroyInstance(s_vkInstance, nullptr);
+            volkFinalize();
         }
     }
 
@@ -321,6 +333,28 @@ namespace vkr {
     void Context::SetIndexBuffer(BufferHandle bufferHandle, VkIndexType indexType) {
         BufferAllocation& buffer = m_buffers[bufferHandle];
         vkCmdBindIndexBuffer(m_graphicsCommandBuffers[m_frameIndex], buffer.buffer, 0, indexType);
+    }
+
+    void Context::SetUniformBuffer(BufferHandle bufferHandle, uint32_t binding) {
+        BufferAllocation& ba = m_buffers[bufferHandle];
+
+        VkDescriptorBufferInfo dbi = {
+            .buffer = ba.buffer,
+            .offset = 0,
+            .range = VK_WHOLE_SIZE
+        };
+
+        VkWriteDescriptorSet wds = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = binding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 1,
+            .pBufferInfo = &dbi
+        };
+
+        vkCmdPushDescriptorSetKHR(m_graphicsCommandBuffers[m_frameIndex], 
+            VK_PIPELINE_BIND_POINT_GRAPHICS, m_pBoundGraphicsPipeline->layout,
+            0, 1, &wds);
     }
     
     void Context::SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle) {
@@ -613,6 +647,19 @@ namespace vkr {
         VK_ASSERT(vkCreateGraphicsPipelines(m_device, nullptr, 1, &gpci, nullptr, &pipeline.pipeline));
 
         return handle;
+    }
+
+    void Context::CopyBufferData(BufferHandle bufferHandle, void* pData, size_t offset, size_t size) {
+        BufferAllocation& ba = m_buffers[bufferHandle];
+
+        // Host local buffer
+        if (ba.allocInfo.pMappedData != nullptr) {
+            memcpy(ba.allocInfo.pMappedData, (uint8_t*)pData + offset, size);
+        }
+        // Device local buffer
+        else {
+            assert(false); // TODO: staging buffer for device local
+        }
     }
 
     uint32_t Context::FindQueueFamilyIndex(VkPhysicalDevice pd, VkQueueFlags flags) {

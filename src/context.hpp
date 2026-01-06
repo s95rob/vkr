@@ -7,7 +7,7 @@
 #elif defined(VKR_LINUX)
     #define VK_USE_PLATFORM_XLIB_KHR
 #endif
-#include <vulkan/vulkan.h>
+#include <volk/volk.h>
 #include <vma/vk_mem_alloc.h>
 
 #include <vector>
@@ -67,6 +67,7 @@ namespace vkr {
 
         void SetVertexBuffers(std::span<BufferHandle> buffers);
         void SetIndexBuffer(BufferHandle bufferHandle, VkIndexType indexType);
+        void SetUniformBuffer(BufferHandle bufferHandle, uint32_t binding);
 
         void SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle);
         void SetPushConstants(void* pData, size_t size, size_t offset);
@@ -79,6 +80,8 @@ namespace vkr {
         BufferHandle CreateBuffer(const BufferDesc& desc);
         VkShaderModule CreateShader(const ShaderDesc& desc);
         GraphicsPipelineHandle CreateGraphicsPipeline(const GraphicsPipelineDesc& desc);
+
+        void CopyBufferData(BufferHandle bufferHandle, void* pData, size_t offset, size_t size);
         
     private:
         // Find a suitable queue family index based on flags
