@@ -18,7 +18,7 @@
 #include <memory>
 
 struct MeshPart {
-    vkr::BufferHandle vbo, ibo;
+    vkr::BufferHandle vbo, nbo, ibo;
     vkr::BufferHandle mbo; // TODO: material buffer- testing only
     uint32_t indexOffset, indexCount;
     VkIndexType indexType;
@@ -73,7 +73,10 @@ int main(int argc, char** argv) {
         .offset = 0,
         .stride = sizeof(float) * 3
     };
-    gpd.vertexAttribs.push_back(attrib);
+    gpd.vertexAttribs.push_back(attrib);    // Vertex positions
+
+    attrib.binding = 1;
+    gpd.vertexAttribs.push_back(attrib);    // Vertex normals
 
     gpd.vertexShader = vs;
     gpd.fragmentShader = fs;
@@ -90,12 +93,15 @@ int main(int argc, char** argv) {
             MeshPart meshPart = {};
 
             auto& vertexPositionsAccessor = gltfModel.accessors[primitive.attributes["POSITION"]];
+            auto& vertexNormalsAccessor = gltfModel.accessors[primitive.attributes["NORMAL"]];
             auto& vertexIndicesAccessor = gltfModel.accessors[primitive.indices];
 
             auto& vertexPositionsView = gltfModel.bufferViews[vertexPositionsAccessor.bufferView];
+            auto& vertexNormalsView = gltfModel.bufferViews[vertexNormalsAccessor.bufferView];
             auto& vertexIndicesView = gltfModel.bufferViews[vertexIndicesAccessor.bufferView];
 
             auto& vertexPositionsBuffer = gltfModel.buffers[vertexPositionsView.buffer];
+            auto& vertexNormalsBuffer = gltfModel.buffers[vertexNormalsView.buffer];
             auto& vertexIndicesBuffer = gltfModel.buffers[vertexIndicesView.buffer];
 
             
@@ -108,6 +114,11 @@ int main(int argc, char** argv) {
             bd.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
             meshPart.vbo = context->CreateBuffer(bd);
             
+            bd.pData = reinterpret_cast<void*>(vertexNormalsBuffer.data.data() + vertexNormalsView.byteOffset + vertexNormalsAccessor.byteOffset);
+            bd.size = vertexNormalsView.byteLength;
+            bd.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+            meshPart.nbo = context->CreateBuffer(bd);
+
             // Build index buffer
             bd.pData = reinterpret_cast<void*>(vertexIndicesBuffer.data.data() + vertexIndicesView.byteOffset + vertexIndicesAccessor.byteOffset);
             bd.size = vertexIndicesView.byteLength;
@@ -159,19 +170,22 @@ int main(int argc, char** argv) {
 
         context->SetGraphicsPipeline(pipeline);
         context->SetPrimitiveTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-        context->SetCullMode(VK_CULL_MODE_NONE);
+        context->SetCullMode(VK_CULL_MODE_BACK_BIT);
 
         // Build and push MVP matrix
-        glm::mat4 mvp = glm::perspectiveLH(glm::radians(75.0f), 800.0f / 600.0f, 0.01f, 1000.0f) *
+        glm::mat4 viewProjectionMatrix = glm::perspectiveLH(glm::radians(75.0f), 800.0f / 600.0f, 0.01f, 1000.0f) *
             glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 2.5f)) * 
             glm::rotate(glm::mat4(1.0f), dt, glm::vec3(0.0f, 1.0f, 0.0f));
 
-        context->SetPushConstants(&mvp, sizeof(mvp), 0);
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+
+        context->SetPushConstants(&modelMatrix, sizeof(glm::mat4), 0);
+        context->SetPushConstants(&viewProjectionMatrix, sizeof(glm::mat4), sizeof(glm::mat4));
 
         // Draw GLTF scene
         for (auto& mesh : sceneMeshes) {
             for (auto& meshPart : mesh.parts) {
-                vkr::BufferHandle vbos[] = { meshPart.vbo };
+                vkr::BufferHandle vbos[] = { meshPart.vbo, meshPart.nbo };
                 context->SetVertexBuffers(vbos);
                 context->SetIndexBuffer(meshPart.ibo, meshPart.indexType);
                 context->SetUniformBuffer(meshPart.mbo, 0);

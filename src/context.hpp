@@ -22,8 +22,16 @@ namespace vkr {
         size_t size;
         VkBufferUsageFlags usage;
     };
-
+    
     using BufferHandle = ResourceID;
+    
+    struct TextureDesc {
+        void* pData;
+        uint32_t width, height;
+        VkFormat format;
+    };
+
+    using TextureHandle = ResourceID;
 
     struct ShaderDesc {
         void* pData;
@@ -68,7 +76,7 @@ namespace vkr {
         void SetVertexBuffers(std::span<BufferHandle> buffers);
         void SetIndexBuffer(BufferHandle bufferHandle, VkIndexType indexType);
         void SetUniformBuffer(BufferHandle bufferHandle, uint32_t binding);
-
+    
         void SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle);
         void SetPushConstants(void* pData, size_t size, size_t offset);
         void SetPrimitiveTopology(VkPrimitiveTopology topology);
