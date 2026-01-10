@@ -356,6 +356,30 @@ namespace vkr {
             VK_PIPELINE_BIND_POINT_GRAPHICS, m_pBoundGraphicsPipeline->layout,
             0, 1, &wds);
     }
+
+    void Context::SetTexture(TextureHandle textureHandle, SamplerHandle samplerHandle, uint32_t binding) {
+        TextureAllocation& ta = m_textures[textureHandle];
+        VkSampler sampler = m_samplers[samplerHandle];
+
+        VkDescriptorImageInfo dii = {
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            .imageView = ta.imageView,
+            .sampler = sampler
+        };
+
+        VkWriteDescriptorSet wds = {
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstBinding = binding,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .pImageInfo = &dii
+        };
+
+        vkCmdPushDescriptorSetKHR(m_graphicsCommandBuffers[m_frameIndex],
+            VK_PIPELINE_BIND_POINT_GRAPHICS, m_pBoundGraphicsPipeline->layout,
+            0, 1, &wds);
+    }
+
     
     void Context::SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle) {
         auto& pipeline = m_graphicsPipelines[pipelineHandle];
@@ -444,6 +468,126 @@ namespace vkr {
         VK_ASSERT(vkCreateShaderModule(m_device, &smci, nullptr, &shader));
 
         return shader;
+    }
+
+    SamplerHandle Context::CreateSampler(const SamplerDesc& desc) {
+        SamplerHandle handle = m_samplers.Create();
+        VkSampler& sampler = m_samplers[handle];
+
+        VkSamplerCreateInfo sci = {
+            .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .addressModeU = desc.addressMode,
+            .addressModeV = desc.addressMode,
+            .addressModeW = desc.addressMode,
+            .minFilter = desc.minFilter,
+            .magFilter = desc.magFilter,
+            .mipLodBias = VK_SAMPLER_MIPMAP_MODE_LINEAR
+        };
+
+        VK_ASSERT(vkCreateSampler(m_device, &sci, nullptr, &sampler));
+
+        return handle;
+    }
+
+
+    TextureHandle Context::CreateTexture(const TextureDesc& desc) {
+        TextureHandle handle = m_textures.Create();
+        TextureAllocation& ta = m_textures[handle];
+
+        VkImageCreateInfo ici = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .imageType = VK_IMAGE_TYPE_2D,
+            .extent = {
+                .width = desc.width,
+                .height = desc.height,
+                .depth = 1
+            },
+            .mipLevels = 1,
+            .arrayLayers = 1,
+            .format = desc.format,
+            .tiling = VK_IMAGE_TILING_OPTIMAL,
+            .usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+            .samples = VK_SAMPLE_COUNT_1_BIT
+        };
+
+        VmaAllocationCreateInfo aci = {
+            .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
+        };
+
+        VK_ASSERT(vmaCreateImage(m_allocator, &ici, &aci, &ta.image, &ta.alloc, &ta.allocInfo));
+
+        // Early-out if desc data empty
+        if (desc.pData == nullptr)
+            return handle;
+
+        // Prepare image to be transfer dst optimal
+        VkCommandBuffer cmds = BeginImmediateCommands();
+        TransitionImageLayout(cmds, ta.image, desc.format,
+            VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+        // Copy data from host buffer to device texture
+        BufferAllocation stagingBuffer;
+
+        // TODO: defaulting to RGBA- wasteful. determine actual pixel width later. 
+        uint32_t pixelWidth = sizeof(uint32_t);
+
+        VkBufferCreateInfo bci = {
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = desc.width * desc.height * pixelWidth,
+            .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT
+        };
+
+        aci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+        aci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+            VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+        VK_ASSERT(vmaCreateBuffer(m_allocator, &bci, &aci, &stagingBuffer.buffer, &stagingBuffer.alloc, 
+            &stagingBuffer.allocInfo));
+
+        memcpy(stagingBuffer.allocInfo.pMappedData, desc.pData, bci.size);
+
+
+        VkBufferImageCopy bic = {
+            .imageSubresource = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .layerCount = 1
+            },
+            .imageExtent = ici.extent
+        };
+
+        vkCmdCopyBufferToImage(cmds, stagingBuffer.buffer, ta.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1, &bic);
+
+            
+            // Transition image so that shaders may use it
+        TransitionImageLayout(cmds, ta.image, desc.format,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                
+        EndImmediateCommands(cmds);
+        vmaDestroyBuffer(m_allocator, stagingBuffer.buffer, stagingBuffer.alloc);
+
+        // Create image view
+        VkImageViewCreateInfo ivci = {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = ta.image,
+            .viewType = VK_IMAGE_VIEW_TYPE_2D,
+            .format = VK_FORMAT_R8G8B8A8_SRGB,
+            .components = {
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY,
+                VK_COMPONENT_SWIZZLE_IDENTITY
+            },
+            .subresourceRange = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .levelCount = 1,
+                .layerCount = 1
+            }
+        };
+
+        VK_ASSERT(vkCreateImageView(m_device, &ivci, nullptr, &ta.imageView));
+
+        return handle;
     }
 
     GraphicsPipelineHandle Context::CreateGraphicsPipeline(const GraphicsPipelineDesc& desc) {

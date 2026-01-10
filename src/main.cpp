@@ -17,11 +17,15 @@
 
 #include <memory>
 
+constexpr uint32_t WINDOW_WIDTH = 1024;
+constexpr uint32_t WINDOW_HEIGHT = 768;
+
 struct MeshPart {
-    vkr::BufferHandle vbo, nbo, ibo;
+    vkr::BufferHandle vbo, nbo, uvbo, ibo;
     vkr::BufferHandle mbo; // TODO: material buffer- testing only
     uint32_t indexOffset, indexCount;
     VkIndexType indexType;
+    uint32_t colorTextureIndex;
 };
 
 struct Mesh {
@@ -36,13 +40,13 @@ int main(int argc, char** argv) {
     // Setup window
     glfwInit();
 
-    GLFWwindow* window = glfwCreateWindow(800, 600, "vkr", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "vkr", nullptr, nullptr);
 
     // Load GLTF
     tinygltf::TinyGLTF gltfLoader;
     tinygltf::Model gltfModel;
 
-    bool gltfLoadResult = gltfLoader.LoadBinaryFromFile(&gltfModel, nullptr, nullptr, "../res/Box.glb");
+    bool gltfLoadResult = gltfLoader.LoadBinaryFromFile(&gltfModel, nullptr, nullptr, "../res/Avocado.glb");
     assert(gltfLoadResult != false);
 
     vkr::PresentationParameters params = {};
@@ -78,13 +82,28 @@ int main(int argc, char** argv) {
     attrib.binding = 1;
     gpd.vertexAttribs.push_back(attrib);    // Vertex normals
 
+    attrib.binding = 2;
+    attrib.format = VK_FORMAT_R32G32_SFLOAT;
+    attrib.stride = sizeof(float) * 2;
+    gpd.vertexAttribs.push_back(attrib);    // Vertex tex coords
+
     gpd.vertexShader = vs;
     gpd.fragmentShader = fs;
 
     vkr::GraphicsPipelineHandle pipeline = context->CreateGraphicsPipeline(gpd);
 
+    // Create default sampler
+    vkr::SamplerDesc smpd = {
+        .addressMode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .minFilter = VK_FILTER_LINEAR,
+        .magFilter = VK_FILTER_LINEAR
+    };
+
+    vkr::SamplerHandle sampler = context->CreateSampler(smpd); 
+
     // Build GLTF scene buffers
     std::vector<Mesh> sceneMeshes;
+    std::vector<vkr::TextureHandle> sceneTextures;
 
     for (auto& gltfMesh : gltfModel.meshes) {
         Mesh mesh = {};
@@ -94,14 +113,17 @@ int main(int argc, char** argv) {
 
             auto& vertexPositionsAccessor = gltfModel.accessors[primitive.attributes["POSITION"]];
             auto& vertexNormalsAccessor = gltfModel.accessors[primitive.attributes["NORMAL"]];
+            auto& vertexTexCoordsAccessor = gltfModel.accessors[primitive.attributes["TEXCOORD_0"]];
             auto& vertexIndicesAccessor = gltfModel.accessors[primitive.indices];
 
             auto& vertexPositionsView = gltfModel.bufferViews[vertexPositionsAccessor.bufferView];
             auto& vertexNormalsView = gltfModel.bufferViews[vertexNormalsAccessor.bufferView];
+            auto& vertexTexCoordsView = gltfModel.bufferViews[vertexTexCoordsAccessor.bufferView];
             auto& vertexIndicesView = gltfModel.bufferViews[vertexIndicesAccessor.bufferView];
 
             auto& vertexPositionsBuffer = gltfModel.buffers[vertexPositionsView.buffer];
             auto& vertexNormalsBuffer = gltfModel.buffers[vertexNormalsView.buffer];
+            auto& vertexTexCoordsBuffer = gltfModel.buffers[vertexTexCoordsView.buffer];
             auto& vertexIndicesBuffer = gltfModel.buffers[vertexIndicesView.buffer];
 
             
@@ -118,6 +140,11 @@ int main(int argc, char** argv) {
             bd.size = vertexNormalsView.byteLength;
             bd.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
             meshPart.nbo = context->CreateBuffer(bd);
+
+            bd.pData = reinterpret_cast<void*>(vertexTexCoordsBuffer.data.data() + vertexTexCoordsView.byteOffset + vertexTexCoordsAccessor.byteOffset);
+            bd.size = vertexTexCoordsView.byteLength;
+            bd.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+            meshPart.uvbo = context->CreateBuffer(bd);
 
             // Build index buffer
             bd.pData = reinterpret_cast<void*>(vertexIndicesBuffer.data.data() + vertexIndicesView.byteOffset + vertexIndicesAccessor.byteOffset);
@@ -144,10 +171,24 @@ int main(int argc, char** argv) {
             case GL_UNSIGNED_INT: meshPart.indexType = VK_INDEX_TYPE_UINT32; break;
             }
 
+            // Get texture index
+            meshPart.colorTextureIndex = material.pbrMetallicRoughness.baseColorTexture.index;
+
             mesh.parts.push_back(meshPart);
         }
 
         sceneMeshes.push_back(mesh);
+    }
+
+    for (auto& gltfImage : gltfModel.images) {
+        vkr::TextureDesc td = {
+            .width = (uint32_t)gltfImage.width,
+            .height = (uint32_t)gltfImage.height,
+            .format = VK_FORMAT_R8G8B8A8_SRGB
+        };
+        td.pData = reinterpret_cast<void*>(gltfImage.image.data());
+
+        sceneTextures.push_back(context->CreateTexture(td));
     }
 
     float dt = 0.0f;
@@ -160,8 +201,8 @@ int main(int argc, char** argv) {
         context->BeginFrame();
         
         VkViewport viewport = {
-            .width = 800,
-            .height = 600,
+            .width = WINDOW_WIDTH,
+            .height = WINDOW_HEIGHT,
             .minDepth = 0.0f,
             .maxDepth = 1.0f
         };
@@ -170,14 +211,13 @@ int main(int argc, char** argv) {
 
         context->SetGraphicsPipeline(pipeline);
         context->SetPrimitiveTopology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-        context->SetCullMode(VK_CULL_MODE_BACK_BIT);
+        context->SetCullMode(VK_CULL_MODE_FRONT_BIT);
 
         // Build and push MVP matrix
         glm::mat4 viewProjectionMatrix = glm::perspectiveLH(glm::radians(75.0f), 800.0f / 600.0f, 0.01f, 1000.0f) *
-            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 2.5f)) * 
-            glm::rotate(glm::mat4(1.0f), dt, glm::vec3(0.0f, 1.0f, 0.0f));
+            glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.025f, 0.075f));
 
-        glm::mat4 modelMatrix = glm::mat4(1.0f);
+        glm::mat4 modelMatrix = glm::rotate(glm::mat4(1.0f), dt, glm::vec3(0.0f, 1.0f, 0.0f));
 
         context->SetPushConstants(&modelMatrix, sizeof(glm::mat4), 0);
         context->SetPushConstants(&viewProjectionMatrix, sizeof(glm::mat4), sizeof(glm::mat4));
@@ -185,10 +225,11 @@ int main(int argc, char** argv) {
         // Draw GLTF scene
         for (auto& mesh : sceneMeshes) {
             for (auto& meshPart : mesh.parts) {
-                vkr::BufferHandle vbos[] = { meshPart.vbo, meshPart.nbo };
+                vkr::BufferHandle vbos[] = { meshPart.vbo, meshPart.nbo, meshPart.uvbo };
                 context->SetVertexBuffers(vbos);
                 context->SetIndexBuffer(meshPart.ibo, meshPart.indexType);
                 context->SetUniformBuffer(meshPart.mbo, 0);
+                context->SetTexture(sceneTextures[meshPart.colorTextureIndex], sampler, 1);
                 context->DrawIndexed(meshPart.indexOffset, meshPart.indexCount);
             }
         }

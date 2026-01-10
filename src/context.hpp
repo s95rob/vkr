@@ -33,6 +33,13 @@ namespace vkr {
 
     using TextureHandle = ResourceID;
 
+    struct SamplerDesc {
+        VkFilter minFilter, magFilter;
+        VkSamplerAddressMode addressMode;
+    };
+
+    using SamplerHandle = ResourceID;
+
     struct ShaderDesc {
         void* pData;
         size_t size;
@@ -76,7 +83,8 @@ namespace vkr {
         void SetVertexBuffers(std::span<BufferHandle> buffers);
         void SetIndexBuffer(BufferHandle bufferHandle, VkIndexType indexType);
         void SetUniformBuffer(BufferHandle bufferHandle, uint32_t binding);
-    
+        void SetTexture(TextureHandle textureHandle, SamplerHandle samplerHandle, uint32_t binding);
+
         void SetGraphicsPipeline(GraphicsPipelineHandle pipelineHandle);
         void SetPushConstants(void* pData, size_t size, size_t offset);
         void SetPrimitiveTopology(VkPrimitiveTopology topology);
@@ -87,6 +95,8 @@ namespace vkr {
 
         BufferHandle CreateBuffer(const BufferDesc& desc);
         VkShaderModule CreateShader(const ShaderDesc& desc);
+        SamplerHandle CreateSampler(const SamplerDesc& desc);
+        TextureHandle CreateTexture(const TextureDesc& desc);
         GraphicsPipelineHandle CreateGraphicsPipeline(const GraphicsPipelineDesc& desc);
 
         void CopyBufferData(BufferHandle bufferHandle, void* pData, size_t offset, size_t size);
@@ -115,6 +125,14 @@ namespace vkr {
 
         struct BufferAllocation {
             VkBuffer buffer;
+            VmaAllocation alloc;
+            VmaAllocationInfo allocInfo;
+        };
+        
+        struct TextureAllocation {
+            VkImage image;
+            VkImageView imageView;
+            VkFormat format;
             VmaAllocation alloc;
             VmaAllocationInfo allocInfo;
         };
@@ -156,6 +174,8 @@ namespace vkr {
         
         ResourceRegistry<GraphicsPipelineAllocation> m_graphicsPipelines;
         ResourceRegistry<BufferAllocation> m_buffers;
+        ResourceRegistry<VkSampler> m_samplers;
+        ResourceRegistry<TextureAllocation> m_textures;
     };
 
 }
