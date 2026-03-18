@@ -1,5 +1,9 @@
 # vkr
 
+<p align="center">
+<img width="602" height="519" alt="image" src="https://github.com/user-attachments/assets/0e6d0ba6-bc89-497b-bb9d-c6665d92f60d" />
+</p>
+
 Vulkan renderer. 
 
 ## Getting Started
