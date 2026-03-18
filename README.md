@@ -23,8 +23,18 @@ Work in progress Vulkan renderer from scratch. Aiming to support a complete PBR 
 
 ### Building
 1. Clone this repository recursively.
-2. Configure with CMake.
-3. Run the generated Makefile.
+```sh
+git clone --recursive https://github.com/s95rob/vkr.git
+```
+3. Configure and build with CMake.
+```sh
+cmake -B build -S . && cmake --build build
+```
+3. Run the built executable.
+```sh
+./build/vkr
+```
 
 
-*NOTE: Only tested on Linux using Clang 19.1.7*
+
+*NOTE: While the codebase targets C++20 and standard Vulkan SDK, it has only been tested on Linux with Clang (version 19.1.17). Cross-platform contributions are welcome!*
